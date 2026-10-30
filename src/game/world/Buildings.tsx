@@ -2,10 +2,12 @@ import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import type { Group } from 'three'
 import { runtime } from '../runtime'
+import type { TimeOfDay } from '../timeOfDay'
 import { makeSignTexture, makeWindowTexture } from '../textures'
 
 const WRAP = 210
-const PALETTE = ['#34384e', '#3d3048', '#2f3f3b', '#473a35', '#363243', '#40364a']
+const NIGHT_PALETTE = ['#34384e', '#3d3048', '#2f3f3b', '#473a35', '#363243', '#40364a']
+const DAY_PALETTE = ['#718092', '#816f86', '#688477', '#8c7768', '#71708b', '#80718a']
 const SIGN_STYLES = [
   { text: 'FART\nFUEL', background: '#c6ff3d', foreground: '#10160a' },
   { text: 'BEAN\nCO.', background: '#ff8a3d', foreground: '#1b0d04' },
@@ -30,7 +32,8 @@ interface BuildingData {
   awning: string | null
 }
 
-function createBuildings(): BuildingData[] {
+function createBuildings(mode: TimeOfDay): BuildingData[] {
+  const palette = mode === 'day' ? DAY_PALETTE : NIGHT_PALETTE
   return Array.from({ length: 14 }, (_, index) => {
     const side = index % 2 === 0 ? 1 : -1
     const pair = Math.floor(index / 2)
@@ -44,7 +47,7 @@ function createBuildings(): BuildingData[] {
       width,
       height,
       depth,
-      color: PALETTE[index % PALETTE.length],
+      color: palette[index % palette.length],
       window: index % 4 === 0 ? 'cool' : 'warm',
       sign: pair % 2 === 0 ? index % SIGN_STYLES.length : null,
       antenna: height > 11 && Math.random() < 0.7,
@@ -58,7 +61,15 @@ function createBuildings(): BuildingData[] {
   })
 }
 
-function Building({ data, texture }: { data: BuildingData; texture: ReturnType<typeof makeWindowTexture> }) {
+function Building({
+  data,
+  texture,
+  mode,
+}: {
+  data: BuildingData
+  texture: ReturnType<typeof makeWindowTexture>
+  mode: TimeOfDay
+}) {
   const signStyle = data.sign === null ? null : SIGN_STYLES[data.sign]
   const signTexture = useMemo(
     () => (signStyle ? makeSignTexture(signStyle.text, signStyle.background, signStyle.foreground) : null),
@@ -82,7 +93,13 @@ function Building({ data, texture }: { data: BuildingData; texture: ReturnType<t
       {texture && (
         <mesh position={[faceX, data.height * 0.58, 0]} rotation={[0, faceRotation, 0]}>
           <planeGeometry args={[data.depth * 0.76, data.height * 0.46]} />
-          <meshBasicMaterial map={texture} transparent depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial
+            map={texture}
+            transparent
+            opacity={mode === 'day' ? 0.4 : 0.92}
+            depthWrite={false}
+            toneMapped={false}
+          />
         </mesh>
       )}
 
@@ -140,8 +157,8 @@ function Building({ data, texture }: { data: BuildingData; texture: ReturnType<t
   )
 }
 
-export function Buildings() {
-  const buildings = useMemo(createBuildings, [])
+export function Buildings({ mode }: { mode: TimeOfDay }) {
+  const buildings = useMemo(() => createBuildings(mode), [mode])
   const textures = useMemo(
     () => ({ warm: makeWindowTexture('warm'), cool: makeWindowTexture('cool') }),
     [],
@@ -168,7 +185,7 @@ export function Buildings() {
           }}
           position={[data.x, 0, data.z]}
         >
-          <Building data={data} texture={textures[data.window]} />
+          <Building data={data} texture={textures[data.window]} mode={mode} />
         </group>
       ))}
     </group>

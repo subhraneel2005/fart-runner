@@ -1,6 +1,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import { AdditiveBlending, BackSide, type Group } from 'three'
+import type { TimeOfDay } from '../timeOfDay'
 import { makeGlowTexture } from '../textures'
 
 const VERTEX = `
@@ -12,7 +13,7 @@ void main() {
 }
 `
 
-const FRAGMENT = `
+const NIGHT_FRAGMENT = `
 varying vec3 vWorldPosition;
 void main() {
   vec3 dir = normalize(vWorldPosition);
@@ -24,6 +25,24 @@ void main() {
   color = mix(color, high, smoothstep(0.63, 0.92, h));
   float sunGlow = pow(max(dot(dir, normalize(vec3(0.18, 0.04, -1.0))), 0.0), 5.0);
   color += vec3(0.42, 0.16, 0.04) * sunGlow;
+  gl_FragColor = vec4(color, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}
+`
+
+const DAY_FRAGMENT = `
+varying vec3 vWorldPosition;
+void main() {
+  vec3 dir = normalize(vWorldPosition);
+  float h = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
+  vec3 low = vec3(0.82, 0.50, 0.26);
+  vec3 mid = vec3(0.18, 0.46, 0.82);
+  vec3 high = vec3(0.03, 0.16, 0.50);
+  vec3 color = mix(low, mid, smoothstep(0.48, 0.63, h));
+  color = mix(color, high, smoothstep(0.63, 0.92, h));
+  float sunGlow = pow(max(dot(dir, normalize(vec3(0.18, 0.08, -1.0))), 0.0), 4.0);
+  color += vec3(0.35, 0.25, 0.10) * sunGlow;
   gl_FragColor = vec4(color, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -48,12 +67,18 @@ interface Cloud {
   color: string
 }
 
-export function Sky() {
+const NIGHT_MOUNTAINS = ['#2d2441', '#352a49', '#292337', '#3d2c4b']
+const DAY_MOUNTAINS = ['#4c765f', '#5c886e', '#456a58', '#6d8c76']
+const NIGHT_CLOUDS = ['#a681ae', '#957099', '#b58cba', '#886593']
+const DAY_CLOUDS = ['#f8f4e9', '#ece7dd', '#ffffff', '#f3ede1']
+
+export function Sky({ mode }: { mode: TimeOfDay }) {
+  const day = mode === 'day'
   const glow = useMemo(() => makeGlowTexture('orange'), [])
-  const moon = useRef<Group>(null)
+  const celestial = useRef<Group>(null)
 
   const mountains = useMemo<Mountain[]>(() => {
-    const palette = ['#2d2441', '#352a49', '#292337', '#3d2c4b']
+    const palette = day ? DAY_MOUNTAINS : NIGHT_MOUNTAINS
     return Array.from({ length: 14 }, (_, index) => {
       const side = index % 2 === 0 ? 1 : -1
       const near = index % 3 === 0
@@ -67,10 +92,10 @@ export function Sky() {
         snow: near ? Math.random() < 0.35 : Math.random() < 0.75,
       }
     })
-  }, [])
+  }, [day])
 
   const clouds = useMemo<Cloud[]>(() => {
-    const palette = ['#a681ae', '#957099', '#b58cba', '#886593']
+    const palette = day ? DAY_CLOUDS : NIGHT_CLOUDS
     return Array.from({ length: 5 }, (_, index) => {
       const side = index % 2 === 0 ? 1 : -1
       const puffs = Array.from({ length: 6 }, (_, puffIndex) => ({
@@ -89,19 +114,19 @@ export function Sky() {
         color: palette[index % palette.length],
       }
     })
-  }, [])
+  }, [day])
 
   useFrame((_state, rawDelta) => {
-    if (moon.current) moon.current.rotation.y += Math.min(rawDelta, 0.05) * 0.025
+    if (celestial.current) celestial.current.rotation.y += Math.min(rawDelta, 0.05) * 0.025
   })
 
   return (
     <>
-      <mesh renderOrder={-10} frustumCulled={false}>
+      <mesh key={mode} renderOrder={-10} frustumCulled={false}>
         <sphereGeometry args={[230, 32, 18]} />
         <shaderMaterial
           vertexShader={VERTEX}
-          fragmentShader={FRAGMENT}
+          fragmentShader={day ? DAY_FRAGMENT : NIGHT_FRAGMENT}
           side={BackSide}
           depthWrite={false}
           fog={false}
@@ -109,43 +134,73 @@ export function Sky() {
         />
       </mesh>
 
-      <group ref={moon} position={[30, 25, -96]}>
-        <mesh>
-          <icosahedronGeometry args={[6.4, 1]} />
-          <meshStandardMaterial
-            color="#ffe6ba"
-            emissive="#ffb46e"
-            emissiveIntensity={0.38}
-            roughness={0.9}
-            metalness={0}
-            flatShading
-            fog={false}
-          />
-        </mesh>
-        {[
-          [2.2, 1.3, 5.2, 1.0],
-          [-2.6, -0.7, 5.45, 0.8],
-          [0.2, 3.0, 5.0, 0.7],
-          [-0.6, -2.8, 5.15, 0.6],
-        ].map(([x, y, z, scale], index) => (
-          <mesh key={index} position={[x, y, z]} scale={[scale, scale, 0.35]}>
-            <icosahedronGeometry args={[1, 0]} />
-            <meshStandardMaterial color="#e5bf92" flatShading fog={false} roughness={1} />
-          </mesh>
-        ))}
-        {glow && (
-          <sprite scale={[34, 34, 34]}>
-            <spriteMaterial
-              map={glow}
-              transparent
-              opacity={0.28}
-              depthWrite={false}
-              blending={AdditiveBlending}
-              toneMapped={false}
+      {day ? (
+        <group ref={celestial} position={[30, 29, -102]}>
+          <mesh>
+            <icosahedronGeometry args={[6.2, 1]} />
+            <meshStandardMaterial
+              color="#fff3c4"
+              emissive="#ffd166"
+              emissiveIntensity={0.6}
+              roughness={1}
+              metalness={0}
+              flatShading
+              fog={false}
             />
-          </sprite>
-        )}
-      </group>
+          </mesh>
+          {glow && (
+            <sprite scale={[30, 30, 30]}>
+              <spriteMaterial
+                map={glow}
+                color="#ffeab4"
+                transparent
+                opacity={0.24}
+                depthWrite={false}
+                blending={AdditiveBlending}
+                toneMapped={false}
+              />
+            </sprite>
+          )}
+        </group>
+      ) : (
+        <group ref={celestial} position={[30, 25, -96]}>
+          <mesh>
+            <icosahedronGeometry args={[6.4, 1]} />
+            <meshStandardMaterial
+              color="#ffe6ba"
+              emissive="#ffb46e"
+              emissiveIntensity={0.38}
+              roughness={0.9}
+              metalness={0}
+              flatShading
+              fog={false}
+            />
+          </mesh>
+          {[
+            [2.2, 1.3, 5.2, 1.0],
+            [-2.6, -0.7, 5.45, 0.8],
+            [0.2, 3.0, 5.0, 0.7],
+            [-0.6, -2.8, 5.15, 0.6],
+          ].map(([x, y, z, scale], index) => (
+            <mesh key={index} position={[x, y, z]} scale={[scale, scale, 0.35]}>
+              <icosahedronGeometry args={[1, 0]} />
+              <meshStandardMaterial color="#e5bf92" flatShading fog={false} roughness={1} />
+            </mesh>
+          ))}
+          {glow && (
+            <sprite scale={[34, 34, 34]}>
+              <spriteMaterial
+                map={glow}
+                transparent
+                opacity={0.28}
+                depthWrite={false}
+                blending={AdditiveBlending}
+                toneMapped={false}
+              />
+            </sprite>
+          )}
+        </group>
+      )}
 
       {clouds.map((cloud, index) => (
         <group key={index} position={[cloud.x, cloud.y, cloud.z]}>
@@ -159,7 +214,7 @@ export function Sky() {
               <meshStandardMaterial
                 color={cloud.color}
                 emissive={cloud.color}
-                emissiveIntensity={0.26}
+                emissiveIntensity={day ? 0.05 : 0.26}
                 flatShading
                 roughness={1}
               />
@@ -177,7 +232,7 @@ export function Sky() {
           {mountain.snow && (
             <mesh position={[0, mountain.height * 0.83, 0]}>
               <coneGeometry args={[mountain.radius * 0.34, mountain.height * 0.26, 5, 1]} />
-              <meshStandardMaterial color="#bdaac9" flatShading roughness={1} />
+              <meshStandardMaterial color={day ? '#f3f0e5' : '#bdaac9'} flatShading roughness={1} />
             </mesh>
           )}
         </group>
