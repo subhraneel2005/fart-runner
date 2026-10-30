@@ -21,8 +21,8 @@ function obstacleKind(distance: number): ObstacleKind {
 
 function powerUpKind(): PowerUpType {
   const roll = Math.random()
-  if (roll < 0.4) return 'rocket'
-  if (roll < 0.72) return 'antigrav'
+  if (roll < 0.36) return 'rocket'
+  if (roll < 0.64) return 'antigrav'
   return 'nuclear'
 }
 
@@ -32,7 +32,7 @@ export function Spawner() {
   const addPowerUpEntity = useGameStore((state) => state.addPowerUpEntity)
 
   const gapLeft = useRef(4)
-  const powerLeft = useRef(180)
+  const powerLeft = useRef(10)
   const seeded = useRef(false)
 
   function spawnRow(z: number, seed = false) {
@@ -99,7 +99,7 @@ export function Spawner() {
     }
 
     if (powerLeft.current <= 0) {
-      powerLeft.current = 240 + Math.random() * 180
+      powerLeft.current = 200 + Math.random() * 140
       const item: PowerUpEntity = {
         id: nextEntityId(),
         lane: Math.floor(Math.random() * LANE_COUNT),
