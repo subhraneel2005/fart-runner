@@ -136,3 +136,12 @@ pnpm start    # serve dist from Express on :8787
 - [x] Add lamps, trees, bushes, barrels, cones, billboards, and overhead FART FUEL gantries
 - [x] Add low-poly bean spectators with eyes, hats, and idle bobbing
 - [x] Apply flat shading and chunky geometry throughout the world
+
+## v1.4 additions
+
+- [x] Add a shader-driven procedural run cycle to the static GLB (legs and arms swing, no rig required)
+- [x] Trigger a 360-degree backflip on every mid-air fart, with a stable username tag outside the flip
+- [x] Pick day or night from the player's local time (6am–6pm = day), with `?tod=day` / `?tod=night` overrides
+- [x] Add a daytime sky, faceted sun, white clouds, green mountains, lighter buildings, and daylight lighting
+- [x] Keep the nighttime sunset city, neon windows, moon, clouds, and stars
+- [x] Make Nuclear Fart less rare: 36% of power-ups, first drop after 10m, 200–340m spawn gaps
