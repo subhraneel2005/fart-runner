@@ -1,4 +1,5 @@
-import { Html, useGLTF } from '@react-three/drei'
+import { useGLTF } from '@react-three/drei'
+import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import {
   Box3,
@@ -10,34 +11,76 @@ import {
   Vector3,
 } from 'three'
 import { CONFIG } from '../config'
+import { runtime } from './runtime'
 
 const MODEL_URL = '/3d_model/low_poly_stickman.glb'
 const TARGET_HEIGHT = 2
 const HEAD_RATIO = 0.885
 const HEAD_RADIUS_RATIO = 0.195
 
+const RUN_VERTEX = `
+  if (abs(aRun.y) > 0.0001) {
+    float legPhase = aRun.y > 0.0 ? 0.0 : 3.14159265;
+    float legAngle = sin(uRunPhase + legPhase) * 0.62 * uRunAmount * abs(aRun.y);
+    float lc = cos(legAngle);
+    float ls = sin(legAngle);
+    float ly = transformed.y;
+    float lz = transformed.z - 2.35;
+    transformed.y = ly * lc - lz * ls;
+    transformed.z = 2.35 + ly * ls + lz * lc;
+  }
+  if (abs(aRun.x) > 0.0001) {
+    float armPhase = aRun.x > 0.0 ? 3.14159265 : 0.0;
+    float armAngle = sin(uRunPhase + armPhase) * -0.42 * uRunAmount * abs(aRun.x);
+    float ac = cos(armAngle);
+    float as = sin(armAngle);
+    float ay = transformed.y;
+    float az = transformed.z - 3.95;
+    transformed.y = ay * ac - az * as;
+    transformed.z = 3.95 + ay * as + az * ac;
+  }
+`
+
+interface RunUniforms {
+  uRunPhase: { value: number }
+  uRunAmount: { value: number }
+}
+
 useGLTF.preload(MODEL_URL)
 
 function poseArms(geometry: BufferGeometry) {
   const position = geometry.getAttribute('position') as BufferAttribute
   if (!position) return
+  const weights = new Float32Array(position.count * 3)
 
   for (let i = 0; i < position.count; i += 1) {
     const x = position.getX(i)
     const z = position.getZ(i)
     const ax = Math.abs(x)
-    if (ax <= 0.95 || z <= 3.1 || z >= 4.4) continue
+    let armWeight = 0
+    let legWeight = 0
 
-    const t = Math.min(1, (ax - 0.95) / 1.1)
-    const angle = t * 1.28
-    const dx = ax - 0.95
-    const dz = z - 3.95
-    const nx = 0.95 + dx * Math.cos(angle) + dz * Math.sin(angle)
-    const nz = 3.95 - dx * Math.sin(angle) + dz * Math.cos(angle)
-    position.setX(i, Math.sign(x) * nx)
-    position.setZ(i, nz)
+    if (ax > 0.95 && z > 3.1 && z < 4.4) {
+      const t = Math.min(1, (ax - 0.95) / 1.1)
+      const angle = t * 1.28
+      const dx = ax - 0.95
+      const dz = z - 3.95
+      const nx = 0.95 + dx * Math.cos(angle) + dz * Math.sin(angle)
+      const nz = 3.95 - dx * Math.sin(angle) + dz * Math.cos(angle)
+      position.setX(i, Math.sign(x) * nx)
+      position.setZ(i, nz)
+      armWeight = Math.sign(x) * t
+    }
+
+    if (z < 2.5 && ax < 0.8) {
+      legWeight = Math.sign(x) * Math.min(1, Math.max(0, (2.5 - z) / 0.9))
+    }
+
+    weights[i * 3] = armWeight
+    weights[i * 3 + 1] = legWeight
   }
 
+  geometry.setAttribute('aRun', new BufferAttribute(weights, 3))
   position.needsUpdate = true
   geometry.computeVertexNormals()
 }
@@ -47,13 +90,7 @@ function disposeMaterial(material: Material | Material[]) {
   else material.dispose()
 }
 
-export function CharacterModel({
-  avatarTexture,
-  username,
-}: {
-  avatarTexture: import('three').Texture
-  username: string
-}) {
+export function CharacterModel({ avatarTexture }: { avatarTexture: import('three').Texture }) {
   const { scene } = useGLTF(MODEL_URL)
 
   const character = useMemo(() => {
@@ -74,6 +111,21 @@ export function CharacterModel({
           standard.roughness = 0.55
           standard.metalness = 0.16
           standard.flatShading = true
+          standard.customProgramCacheKey = () => 'fart-runner-run-v1'
+          const runUniforms: RunUniforms = {
+            uRunPhase: { value: 0 },
+            uRunAmount: { value: 0 },
+          }
+          standard.userData.runUniforms = runUniforms
+          standard.onBeforeCompile = (shader) => {
+            shader.uniforms.uRunPhase = runUniforms.uRunPhase
+            shader.uniforms.uRunAmount = runUniforms.uRunAmount
+            shader.vertexShader = `uniform float uRunPhase;\nuniform float uRunAmount;\nattribute vec3 aRun;\n${shader.vertexShader}`
+            shader.vertexShader = shader.vertexShader.replace(
+              '#include <begin_vertex>',
+              `#include <begin_vertex>\n${RUN_VERTEX}`,
+            )
+          }
           standard.needsUpdate = true
         }
         return next
@@ -93,6 +145,21 @@ export function CharacterModel({
     return { root, scale }
   }, [scene])
 
+  useFrame(() => {
+    const amount = runtime.grounded ? 1 : 0
+    character.root.traverse((child) => {
+      const mesh = child as Mesh
+      if (!mesh.isMesh) return
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const material of materials) {
+        const uniforms = material.userData.runUniforms as RunUniforms | undefined
+        if (!uniforms) continue
+        uniforms.uRunPhase.value = runtime.runCycle
+        uniforms.uRunAmount.value = amount
+      }
+    })
+  })
+
   useEffect(() => {
     return () => {
       character.root.traverse((child) => {
@@ -106,7 +173,6 @@ export function CharacterModel({
 
   const headY = TARGET_HEIGHT * HEAD_RATIO
   const headRadius = TARGET_HEIGHT * HEAD_RADIUS_RATIO
-  const tagY = headY + headRadius + 0.24
 
   return (
     <group position={[0, -CONFIG.playerY, 0]}>
@@ -126,15 +192,6 @@ export function CharacterModel({
           toneMapped={false}
         />
       </mesh>
-
-      <Html
-        position={[0, tagY, 0]}
-        center
-        zIndexRange={[8, 0]}
-        style={{ pointerEvents: 'none' }}
-      >
-        <div className="player-tag">@{username}</div>
-      </Html>
     </group>
   )
 }

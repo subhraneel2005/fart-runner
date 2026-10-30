@@ -1,3 +1,4 @@
+import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { RigidBody, CapsuleCollider, type RapierRigidBody } from '@react-three/rapier'
 import { useRef } from 'react'
@@ -23,6 +24,7 @@ export function Player() {
   const body = useRef<RapierBody>(null)
   const visual = useRef<THREE.Group>(null)
   const shadow = useRef<THREE.Mesh>(null)
+  const flipGroup = useRef<THREE.Group>(null)
 
   const lane = useRef(1)
   const grounded = useRef(true)
@@ -32,6 +34,8 @@ export function Player() {
   const gravityScale = useRef(1)
   const boostTimer = useRef(0)
   const runCycle = useRef(0)
+  const flipTimer = useRef(0)
+  const flipDuration = 0.72
 
   useFrame((_state, rawDelta) => {
     const rb = body.current
@@ -67,6 +71,7 @@ export function Player() {
             )
             runtime.fartPower = 1
             runtime.impulse = Math.max(runtime.impulse, 0.45)
+            flipTimer.current = flipDuration
             playAirFart()
             kick(0.18)
           }
@@ -143,6 +148,8 @@ export function Player() {
 
     const airHeight = Math.max(0, position.y - CONFIG.playerY)
     runCycle.current += dt * (runtime.speed * 1.05 + 6)
+    runtime.grounded = grounded.current
+    runtime.runCycle = runCycle.current
 
     if (visual.current) {
       const targetLean = THREE.MathUtils.clamp(-dx * 0.09, -0.32, 0.32)
@@ -153,6 +160,17 @@ export function Player() {
       visual.current.scale.set(1 + crouch * 0.5, 1 - crouch, 1 + crouch * 0.5)
       visual.current.position.y =
         (grounded.current ? Math.abs(Math.sin(runCycle.current * 1.35)) * 0.055 : 0) - crouch * 0.08
+    }
+
+    if (flipGroup.current) {
+      if (flipTimer.current > 0) {
+        flipTimer.current = Math.max(0, flipTimer.current - dt)
+        const progress = 1 - flipTimer.current / flipDuration
+        const eased = progress * progress * (3 - 2 * progress)
+        flipGroup.current.rotation.x = eased * Math.PI * 2
+      } else {
+        flipGroup.current.rotation.x = 0
+      }
     }
 
     if (shadow.current) {
@@ -206,10 +224,17 @@ export function Player() {
       />
 
       <group ref={visual}>
-        <CharacterModel
-          avatarTexture={avatarTexture}
-          username={profile?.username ?? 'mystery_farter'}
-        />
+        <group ref={flipGroup}>
+          <CharacterModel avatarTexture={avatarTexture} />
+        </group>
+        <Html
+          position={[0, 1.56, 0]}
+          center
+          zIndexRange={[8, 0]}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div className="player-tag">@{profile?.username ?? 'mystery_farter'}</div>
+        </Html>
       </group>
 
       <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.78, 0]}>

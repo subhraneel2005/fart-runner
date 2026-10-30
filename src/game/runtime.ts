@@ -8,6 +8,8 @@ export const runtime = {
   baseSpeed: CONFIG.baseSpeed,
   playerX: 0,
   playerY: CONFIG.playerY,
+  grounded: true,
+  runCycle: 0,
   gas: CONFIG.gasMax,
   charge: 0,
   boosting: false,
@@ -24,6 +26,8 @@ export const runtime = {
     this.baseSpeed = CONFIG.baseSpeed
     this.playerX = 0
     this.playerY = CONFIG.playerY
+    this.grounded = true
+    this.runCycle = 0
     this.gas = CONFIG.gasMax
     this.charge = 0
     this.boosting = false
